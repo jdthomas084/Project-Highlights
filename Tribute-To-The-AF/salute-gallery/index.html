@@ -1,0 +1,178 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>I Salute The Armed Forces</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;background:#101923;color:#f5efe0;font:16px system-ui,sans-serif}
+main{max-width:960px;margin:auto;padding:clamp(16px,4vw,44px)}
+small{color:#f6bf65;font-weight:800;letter-spacing:.2em}
+h1{font-size:clamp(40px,8vw,76px);line-height:1;margin:10px 0}
+p{color:#b9c7d5}
+header{display:flex;gap:12px;flex-wrap:wrap;margin:24px 0 10px}
+.stat{background:#213243;border-radius:10px;padding:10px 18px;flex:1;min-width:88px}
+.stat span{display:block;font-size:12px;color:#b9c7d5;text-transform:uppercase;letter-spacing:.1em}
+strong{font-size:26px;font-variant-numeric:tabular-nums}
+progress{width:100%;height:8px;display:block;margin:0 0 12px;accent-color:#f6bf65}
+#field{position:relative;overflow:hidden;height:clamp(320px,55vh,520px);border:1px solid #465c70;border-radius:16px;background-color:#172636;background-image:radial-gradient(#476079 1px,transparent 1px);background-size:22px 22px}
+#field.playing,#field.playing *{cursor:none}
+#cursor{position:absolute;font:36px/36px "Segoe UI Emoji",sans-serif;pointer-events:none;transform:translate(-50%,-50%);z-index:3}
+.target{position:absolute;left:0;width:68px;height:68px;padding:7px;border:2px solid #d3a254;border-radius:50%;background:#f8f2e4;display:grid;place-items:center;box-shadow:0 4px 14px #0008}
+.target img{width:100%;height:100%;object-fit:contain;pointer-events:none}
+#overlay{position:absolute;inset:0;display:grid;place-content:center;text-align:center;background:#172636c9;padding:16px}
+#overlay[hidden],#cursor[hidden],.target[hidden]{display:none}
+#start{justify-self:center;background:#f6bf65;border:0;border-radius:8px;padding:12px 24px;font:inherit;font-weight:800;color:#15202b;cursor:pointer}
+h2{margin:0;font-size:32px}
+button:focus-visible{outline:3px solid #78d8ff;outline-offset:3px}
+.legend{margin-top:16px}
+.legend h2{font-size:16px}
+.legend ul{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(140px,100%),1fr));gap:8px;list-style:none;padding:0;margin:8px 0 0}
+.legend li{display:flex;align-items:center;gap:8px;background:#213243;border-radius:10px;padding:8px}
+.legend img{width:32px;height:32px;padding:3px;border-radius:50%;background:#f8f2e4}
+.legend strong{margin-left:auto;font-size:20px}
+</style>
+<main>
+<small>20-SECOND ARCADE by Joshua D. Thomas</small>
+<h1>I Salute The Armed Forces</h1>
+<p>Click the branch logos as they move. Every Salute earns 25 points.</p>
+<header>
+<div class="stat"><span>Round</span><strong id="round">0</strong></div>
+<div class="stat"><span>Time left</span><strong id="time">20s</strong></div>
+<div class="stat"><span>Score</span><strong id="score">0</strong></div>
+<div class="stat"><span>Hits</span><strong id="hits">0</strong></div>
+<div class="stat"><span>Clicks</span><strong id="clicks">0</strong></div>
+<div class="stat"><span>Best</span><strong id="best">0</strong></div>
+</header>
+<progress id="bar" max="20" value="20" aria-label="Round time remaining"></progress>
+<section id="field" aria-label="Shooting gallery">
+<div id="overlay"><h2 id="status" aria-live="polite">Ready to play?</h2><p id="result">Army · Navy · Air Force · Marines</p><button id="start">Start round</button></div>
+<span id="cursor" hidden aria-hidden="true">&#129761;</span>
+</section>
+<section class="legend" aria-labelledby="legend-title">
+<h2 id="legend-title">Logo legend · Round hits</h2>
+<ul id="legend"></ul>
+</section>
+</main>
+<script>
+const $ = id => document.getElementById(id);
+const field = $('field'), cursor = $('cursor');
+const pointsPerHit = 25;
+const branches = [['Army','army'],['Navy','navy'],['Air Force','air-force'],['Marines','marines']].map(([name, file]) => {
+  const item = document.createElement('li');
+  const img = new Image();
+  const src = 'assets/' + file + '.svg';
+  img.src = src;
+  img.alt = '';
+  const label = document.createElement('span');
+  label.textContent = name;
+  const count = document.createElement('strong');
+  count.textContent = '0';
+  item.append(img, label, count);
+  $('legend').append(item);
+  return { name, src, count, hits: 0 };
+});
+const targets = Array.from({ length: 4 }, (_, row) => {
+  const button = document.createElement('button');
+  button.className = 'target';
+  button.hidden = true;
+  button.style.top = (row + 0.5) * 25 + '%';
+  const img = new Image();
+  img.alt = '';
+  button.append(img);
+  field.prepend(button);
+  const target = { button, img, branch: null, x: 0, speed: 150 + row * 22 };
+  button.addEventListener('click', () => {
+    if (!active) return;
+    if (performance.now() >= deadline) { finish(); return; }
+    target.branch.count.textContent = ++target.branch.hits;
+    $('hits').textContent = ++hits;
+    score = hits * pointsPerHit;
+    $('score').textContent = score;
+    enter(target);
+  });
+  return target;
+});
+let active = false, score = 0, hits = 0, round = 0, best = 0, deadline = 0, lastFrame = 0;
+let clicks = 0;
+field.addEventListener('click', event => {
+  if (!active || performance.now() >= deadline || event.detail === 0) return;
+  $('clicks').textContent = ++clicks;
+}, { capture: true });
+function draw(target) {
+  target.button.style.transform = 'translate(' + target.x + 'px, -50%)';
+}
+function enter(target, delay = 0) {
+  const choices = branches.filter(branch => branch !== target.branch);
+  target.branch = choices[Math.floor(Math.random() * choices.length)];
+  const { name, src } = target.branch;
+  target.button.setAttribute('aria-label', name);
+  target.img.src = src;
+  target.x = -target.button.offsetWidth - 16 - delay;
+  draw(target);
+}
+function finish() {
+  active = false;
+  best = Math.max(score, best);
+  $('best').textContent = best;
+  $('time').textContent = '0s';
+  $('bar').value = 0;
+  field.classList.remove('playing');
+  cursor.hidden = true;
+  targets.forEach(({ button }) => button.hidden = true);
+  $('status').textContent = 'Round ' + round + ' complete';
+  $('result').textContent = score + ' points · ' + hits + (hits === 1 ? ' hit' : ' hits');
+  $('start').textContent = 'Play again';
+  $('overlay').hidden = false;
+  $('start').focus();
+}
+function tick(now) {
+  if (!active) return;
+  const remaining = (deadline - now) / 1000;
+  if (remaining <= 0) { finish(); return; }
+  $('time').textContent = Math.ceil(remaining) + 's';
+  $('bar').value = remaining;
+  const elapsed = Math.min(now - lastFrame, 50) / 1000;
+  lastFrame = now;
+  const width = field.clientWidth;
+  targets.forEach(target => {
+    target.x += target.speed * elapsed;
+    if (target.x >= width + 16) enter(target);
+    else draw(target);
+  });
+  requestAnimationFrame(tick);
+}
+$('start').addEventListener('click', () => {
+  score = 0;
+  hits = 0;
+  clicks = 0;
+  $('score').textContent = score;
+  $('hits').textContent = hits;
+  $('clicks').textContent = clicks;
+  branches.forEach(branch => {
+    branch.hits = 0;
+    branch.count.textContent = '0';
+  });
+  $('round').textContent = ++round;
+  $('overlay').hidden = true;
+  field.classList.add('playing');
+  targets.forEach((target, row) => {
+    target.button.hidden = false;
+    enter(target, row * 22);
+  });
+  active = true;
+  const now = performance.now();
+  deadline = now + 20000;
+  lastFrame = now;
+  tick(now);
+});
+field.addEventListener('pointermove', event => {
+  if (!active || event.pointerType === 'touch') return;
+  const bounds = field.getBoundingClientRect();
+  cursor.style.left = (event.clientX - bounds.left - field.clientLeft) + 'px';
+  cursor.style.top = (event.clientY - bounds.top - field.clientTop) + 'px';
+  cursor.hidden = false;
+});
+field.addEventListener('pointerleave', () => cursor.hidden = true);
+</script>
+</html>
